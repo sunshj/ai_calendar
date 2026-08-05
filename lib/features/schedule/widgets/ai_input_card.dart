@@ -205,6 +205,30 @@ class _AiInputCardState extends ConsumerState<AiInputCard> {
                 ),
               ),
             ),
+            if (isParsing) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '正在调用 AI 解析日程，可能需要数十秒，请稍候…',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(minHeight: 3),
+            ],
             if (aiError != null) ...[
               const SizedBox(height: 8),
               Container(

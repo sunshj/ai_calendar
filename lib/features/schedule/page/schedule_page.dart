@@ -85,7 +85,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
           IconButton(
             tooltip: '重置表单',
             icon: const Icon(Icons.restart_alt),
-            onPressed: formState.isSubmitting
+            onPressed: (formState.isSubmitting || formState.isParsing)
                 ? null
                 : () {
                     notifier.reset();
@@ -214,6 +214,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
       ),
       bottomNavigationBar: _SubmitBar(
         isSubmitting: formState.isSubmitting,
+        isParsing: formState.isParsing,
         onSubmit: _onSubmit,
       ),
     );
@@ -304,29 +305,34 @@ class _DurationHint extends StatelessWidget {
 
 class _SubmitBar extends StatelessWidget {
   final bool isSubmitting;
+  final bool isParsing;
   final VoidCallback onSubmit;
 
   const _SubmitBar({
     required this.isSubmitting,
+    required this.isParsing,
     required this.onSubmit,
   });
 
   @override
   Widget build(BuildContext context) {
+    final busy = isSubmitting || isParsing;
     final media = MediaQuery.of(context);
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, 8, 16, media.padding.bottom + 8),
         child: FilledButton.icon(
-          onPressed: isSubmitting ? null : onSubmit,
-          icon: isSubmitting
+          onPressed: busy ? null : onSubmit,
+          icon: isParsing
               ? const SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2.5),
                 )
               : const Icon(Icons.edit_calendar),
-          label: Text(isSubmitting ? '创建中...' : '创建日程'),
+          label: Text(
+            isParsing ? 'AI 解析中...' : (isSubmitting ? '创建中...' : '创建日程'),
+          ),
         ),
       ),
     );

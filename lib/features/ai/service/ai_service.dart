@@ -11,6 +11,9 @@ import 'ai_api_key_store.dart';
 const _deepSeekEndpoint = 'https://api.deepseek.com/chat/completions';
 const _deepSeekModel = 'deepseek-v4-flash';
 const _requestTimeout = Duration(seconds: 45);
+const _maxTokens = 2048;
+const _temperature = 0.1;
+const _maxAttempts = 2;
 
 /// 未配置 API Key 时抛出。
 class AiApiKeyMissingException implements Exception {
@@ -57,52 +60,34 @@ class AiService {
     }
 
     final currentTime = now ?? DateTime.now();
-    final requestBody = jsonEncode({
-      'model': _deepSeekModel,
-      'messages': [
-        {'role': 'system', 'content': AiSystemPrompt.build(now: currentTime)},
-        {'role': 'user', 'content': text},
-      ],
-      'response_format': {'type': 'json_object'},
-      'temperature': 0.2,
-      'max_tokens': 1024,
-    });
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': AiSystemPrompt.build(now: currentTime)},
+      {'role': 'user', 'content': text},
+    ];
 
-    http.Response response;
-    try {
-      response = await _client
-          .post(
-            Uri.parse(_deepSeekEndpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $apiKey',
-            },
-            body: requestBody,
-          )
-          .timeout(_requestTimeout);
-    } on TimeoutException {
-      throw const AiApiException(0, '请求超时，请稍后重试');
-    } on http.ClientException catch (e) {
-      throw AiApiException(0, '网络请求失败：${e.message}');
+    for (var attempt = 0; attempt < _maxAttempts; attempt++) {
+      final content = await _chat(messages, apiKey);
+      try {
+        final decoded = _decodeJsonObject(content);
+        if (decoded == null) {
+          throw const AiParseException('AI 返回的内容不是合法 JSON');
+        }
+        return scheduleFromLlmJson(decoded);
+      } on AiParseException catch (e) {
+        if (attempt == _maxAttempts - 1) rethrow;
+        // 追加一轮纠错：告诉模型上次输出无法解析，重新只输出 JSON。
+        messages.addAll([
+          {'role': 'assistant', 'content': content},
+          {
+            'role': 'user',
+            'content': '你刚才的输出无法解析（${e.message}）。'
+                '请重新输出：只输出一个 JSON 对象，不要 Markdown 代码块，'
+                '不要任何解释或多余文字，并且必须包含 title 和 start 字段。',
+          },
+        ]);
+      }
     }
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AiApiException(
-        response.statusCode,
-        _extractErrorMessage(response.body),
-      );
-    }
-
-    final content = _extractContent(response.body);
-    if (content == null) {
-      throw const AiApiException(0, 'AI 返回内容无法解析');
-    }
-
-    final decoded = _decodeJson(content);
-    if (decoded is! Map<String, dynamic>) {
-      throw const AiParseException('AI 返回的 JSON 结构不是对象');
-    }
-    return scheduleFromLlmJson(decoded);
+    throw const AiParseException('AI 返回的内容不是合法 JSON');
   }
 
   Future<String> _resolveApiKey() async {
@@ -143,12 +128,89 @@ class AiService {
     return text;
   }
 
-  static Object? _decodeJson(String content) {
+  /// 尝试把模型输出解析为 JSON 对象。
+  ///
+  /// 先直接解析；失败时去掉首尾多余文字，提取第一个平衡的 `{...}` 块再解析。
+  static Map<String, dynamic>? _decodeJsonObject(String raw) {
+    final text = _stripCodeFence(raw.trim());
     try {
-      return jsonDecode(content);
+      final decoded = jsonDecode(text);
+      if (decoded is Map<String, dynamic>) return decoded;
     } on FormatException {
-      throw const AiParseException('AI 返回的内容不是合法 JSON');
+      // 走下面的容错提取
     }
+
+    final start = text.indexOf('{');
+    if (start == -1) return null;
+
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var i = start; i < text.length; i++) {
+      final ch = text[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch == r'\') {
+          escaped = true;
+        } else if (ch == '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch == '"') {
+        inString = true;
+      } else if (ch == '{') {
+        depth++;
+      } else if (ch == '}') {
+        depth--;
+        if (depth == 0) {
+          try {
+            final decoded = jsonDecode(text.substring(start, i + 1));
+            if (decoded is Map<String, dynamic>) return decoded;
+          } on FormatException {
+            return null;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<String> _chat(List<Map<String, String>> messages, String apiKey) async {
+    final requestBody = jsonEncode({
+      'model': _deepSeekModel,
+      'messages': messages,
+      'response_format': {'type': 'json_object'},
+      'temperature': _temperature,
+      'max_tokens': _maxTokens,
+    });
+
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            Uri.parse(_deepSeekEndpoint),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: requestBody,
+          )
+          .timeout(_requestTimeout);
+    } on TimeoutException {
+      throw const AiApiException(0, '请求超时，请稍后重试');
+    } on http.ClientException catch (e) {
+      throw AiApiException(0, '网络请求失败：${e.message}');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AiApiException(
+        response.statusCode,
+        _extractErrorMessage(response.body),
+      );
+    }
+    return _extractContent(response.body) ?? '';
   }
 
   static String _extractErrorMessage(String body) {

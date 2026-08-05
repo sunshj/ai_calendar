@@ -13,7 +13,7 @@ class AiSystemPrompt {
 请基于当前时间把"明天""下周一""十月"等相对时间转换为绝对时间。
 
 输出要求（必须严格遵守）：
-1. 只输出一个 JSON 对象，不要 Markdown 代码块，不要任何解释性文字。
+1. 你的输出会被程序直接解析，任何非 JSON 内容都会导致失败。只输出一个 JSON 对象，严禁输出 Markdown 代码块（```）、"json" 前缀、注释、说明文字或思考过程。
 2. 所有时间必须是本地绝对时间，ISO 8601 格式 yyyy-MM-ddTHH:mm:ss，不带时区后缀。
 3. 默认时长 60 分钟；如果用户没提到提醒时间，reminderMinutes 用 15。
 4. 不重复时 repeatRule 输出 null；重复时 frequency 只能是 DAILY / WEEKLY / MONTHLY / YEARLY。
@@ -21,6 +21,8 @@ class AiSystemPrompt {
 6. until 和 count 二选一；until 必须带时间。
 7. 标题不能为空；用户没说描述时 description 输出 null。
 8. 如果用户描述中存在冲突或无法理解的信息，基于最合理的推断输出，不要拒绝。
+9. JSON 必须以 { 开头、以 } 结尾，所有字段都必须出现（包括值为 null 的字段），不要省略任何字段。
+10. interval 默认 1，byMonthDay 默认空数组 []，until 和 count 没有就输出 null。
 
 JSON Schema：
 {

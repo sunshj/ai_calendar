@@ -76,7 +76,7 @@ void main() {
     final body = jsonDecode(captured.body) as Map<String, dynamic>;
     expect(body['model'], 'deepseek-v4-flash');
     expect(body['response_format'], {'type': 'json_object'});
-    expect(body['temperature'], 0.2);
+    expect(body['temperature'], 0.1);
     final messages = body['messages'] as List<dynamic>;
     expect(messages.first['role'], 'system');
     expect(messages.first['content'], contains('JSON'));
@@ -105,6 +105,58 @@ void main() {
     expect(schedule.start, DateTime(2026, 8, 6, 9));
   });
 
+  test('内容带前后说明文字也能提取 JSON', () async {
+    await keyStore.save('sk-test-key');
+
+    final client = MockClient((_) async {
+      return http.Response(
+        jsonEncode(completionResponse('好的，解析结果如下：\n'
+            '{"title": "晨会", "start": "2026-08-06T09:00:00", '
+            '"durationMinutes": 30}\n请查收。')),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+
+    final schedule = await serviceWith(client).parse('明早九点晨会');
+    expect(schedule.title, '晨会');
+    expect(schedule.start, DateTime(2026, 8, 6, 9));
+  });
+
+  test('首次输出非法 JSON 时自动重试一次', () async {
+    await keyStore.save('sk-test-key');
+
+    var calls = 0;
+    late http.Request secondRequest;
+    final client = MockClient((request) async {
+      calls++;
+      if (calls == 1) {
+        return http.Response(
+          jsonEncode(completionResponse('抱歉，我无法理解这个请求')),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      secondRequest = request;
+      return http.Response(
+        jsonEncode(completionResponse(
+            '{"title": "晨会", "start": "2026-08-06T09:00:00"}')),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+
+    final schedule = await serviceWith(client).parse('明早九点晨会');
+
+    expect(calls, 2);
+    expect(schedule.title, '晨会');
+
+    final body = jsonDecode(secondRequest.body) as Map<String, dynamic>;
+    final messages = body['messages'] as List<dynamic>;
+    expect(messages.length, 4);
+    expect(messages.last['content'], contains('无法解析'));
+  });
+
   test('非 2xx 响应抛 AiApiException 并透出错误信息', () async {
     await keyStore.save('sk-test-key');
 
@@ -128,10 +180,12 @@ void main() {
     );
   });
 
-  test('AI 返回非法 JSON 抛 AiParseException', () async {
+  test('重试后仍非法 JSON 抛 AiParseException', () async {
     await keyStore.save('sk-test-key');
 
+    var calls = 0;
     final client = MockClient((_) async {
+      calls++;
       return http.Response(
         jsonEncode(completionResponse('not a json at all')),
         200,
@@ -139,9 +193,10 @@ void main() {
       );
     });
 
-    expect(
-      () => serviceWith(client).parse('明天开会'),
+    await expectLater(
+      serviceWith(client).parse('明天开会'),
       throwsA(isA<AiParseException>()),
     );
+    expect(calls, 2);
   });
 }

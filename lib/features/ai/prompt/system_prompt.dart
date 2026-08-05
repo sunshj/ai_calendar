@@ -15,7 +15,7 @@ class AiSystemPrompt {
 输出要求（必须严格遵守）：
 1. 你的输出会被程序直接解析，任何非 JSON 内容都会导致失败。只输出一个 JSON 对象，严禁输出 Markdown 代码块（```）、"json" 前缀、注释、说明文字或思考过程。
 2. 所有时间必须是本地绝对时间，ISO 8601 格式 yyyy-MM-ddTHH:mm:ss，不带时区后缀。
-3. 默认时长 60 分钟；如果用户没提到提醒时间，reminderMinutes 用 15；用户说"开始时提醒"用 0，"不提醒"用 null。
+3. 默认时长 60 分钟；如果用户没提到提醒时间，reminderMinutes 用 15；用户说"开始时提醒"或"到点提醒我"用 0，"不提醒"用 null。
 4. 不重复时 repeatRule 输出 null；重复时 frequency 只能是 DAILY / WEEKLY / MONTHLY / YEARLY。
 5. byDay 用 ["MO","TU","WE","TH","FR","SA","SU"]；每周重复但用户未指定星期时，byDay 输出空数组。
 6. until 和 count 二选一；until 必须带时间。
@@ -23,6 +23,29 @@ class AiSystemPrompt {
 8. 如果用户描述中存在冲突或无法理解的信息，基于最合理的推断输出，不要拒绝。
 9. JSON 必须以 { 开头、以 } 结尾，所有字段都必须出现（包括值为 null 的字段），不要省略任何字段。
 10. interval 默认 1，byMonthDay 默认空数组 []，until 和 count 没有就输出 null。
+11. 重复日程的 start 必须是当前时间之后最近的一个未来发生日期。绝对不要从今年年初或任何过去的日期开始系列，否则过去的月份也会被创建出来。
+12. 用户说"只设置今年"/"今年的"时，until 用当年 12 月 31 日 23:59:59。
+
+针对性示例：
+当前时间：2026-08-05（周三）
+用户输入："每月8号是零食店会员日，记得晚上八点提醒我，但是只设置今年的"
+输出 JSON：
+{
+  "title": "零食店会员日",
+  "description": null,
+  "start": "2026-08-08T20:00:00",
+  "end": "2026-08-08T21:00:00",
+  "durationMinutes": 60,
+  "reminderMinutes": 0,
+  "repeatRule": {
+    "frequency": "MONTHLY",
+    "interval": 1,
+    "byDay": [],
+    "byMonthDay": [8],
+    "until": "2026-12-31T23:59:59",
+    "count": null
+  }
+}
 
 JSON Schema：
 {

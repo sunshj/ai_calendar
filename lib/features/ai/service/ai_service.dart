@@ -72,7 +72,7 @@ class AiService {
         if (decoded == null) {
           throw const AiParseException('AI 返回的内容不是合法 JSON');
         }
-        return scheduleFromLlmJson(decoded);
+        return scheduleFromLlmJson(decoded, now: currentTime);
       } on AiParseException catch (e) {
         if (attempt == _maxAttempts - 1) rethrow;
         // 追加一轮纠错：告诉模型上次输出无法解析，重新只输出 JSON。

@@ -169,5 +169,89 @@ void main() {
         throwsA(isA<AiParseException>()),
       );
     });
+
+    group('start 落在过去时的未来发生日推平', () {
+      final now = DateTime(2026, 8, 5, 12);
+
+      test('每月 8 号从 1 月开始会推平到 8 月 8 日', () {
+        final schedule = scheduleFromLlmJson(
+          {
+            'title': '零食店会员日',
+            'start': '2026-01-08T20:00:00',
+            'end': '2026-01-08T21:00:00',
+            'reminderMinutes': 0,
+            'repeatRule': {
+              'frequency': 'MONTHLY',
+              'byMonthDay': [8],
+              'until': '2026-12-31T23:59:59',
+            },
+          },
+          now: now,
+        );
+
+        expect(schedule.start, DateTime(2026, 8, 8, 20));
+        expect(schedule.end, DateTime(2026, 8, 8, 21));
+        expect(schedule.repeatRule!.until, DateTime(2026, 12, 31, 23, 59, 59));
+      });
+
+      test('每周一起始的系列推平到下一个周一', () {
+        final schedule = scheduleFromLlmJson(
+          {
+            'title': '周会',
+            'start': '2026-08-03T09:00:00', // 周一，已过去
+            'repeatRule': {
+              'frequency': 'WEEKLY',
+              'byDay': ['MO'],
+            },
+          },
+          now: now,
+        );
+
+        expect(schedule.start, DateTime(2026, 8, 10, 9));
+      });
+
+      test('每日系列推平到明天', () {
+        final schedule = scheduleFromLlmJson(
+          {
+            'title': '每日打卡',
+            'start': '2026-08-04T08:00:00',
+            'repeatRule': {
+              'frequency': 'DAILY',
+            },
+          },
+          now: now,
+        );
+
+        expect(schedule.start, DateTime(2026, 8, 6, 8));
+      });
+
+      test('不重复的过去日程不推平', () {
+        final schedule = scheduleFromLlmJson(
+          {
+            'title': '补录',
+            'start': '2026-01-08T10:00:00',
+          },
+          now: now,
+        );
+
+        expect(schedule.start, DateTime(2026, 1, 8, 10));
+      });
+
+      test('start 已在未来时不改动', () {
+        final schedule = scheduleFromLlmJson(
+          {
+            'title': '未来日程',
+            'start': '2026-08-08T20:00:00',
+            'repeatRule': {
+              'frequency': 'MONTHLY',
+              'byMonthDay': [8],
+            },
+          },
+          now: now,
+        );
+
+        expect(schedule.start, DateTime(2026, 8, 8, 20));
+      });
+    });
   });
 }

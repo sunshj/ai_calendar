@@ -413,41 +413,32 @@ Events 字段默认值：
 
 ---
 
-## 10. AI 接入路径（零业务改动）
+## 10. AI 接入（v1.1 已实现：DeepSeek V4 Flash）
 
-### 10.1 新文件清单
+### 10.1 调用约定
 
-只在 `features/ai/` 下新增，其他所有目录 **零修改**：
+- 端点：`POST https://api.deepseek.com/chat/completions`（base_url 未变）
+- 模型：`deepseek-v4-flash`（`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 弃用）
+- 协议：OpenAI ChatCompletions 兼容，`Authorization: Bearer <API Key>`
+- 结构化输出：`response_format: {"type": "json_object"}`，system prompt 含 "json" 字样与 JSON 样例
+- Key 优先级：应用内 SharedPreferences 保存的 Key > `--dart-define=AI_API_KEY`
+
+### 10.2 文件清单
 
 ```
 features/ai/
-  service/ai_service.dart
-    - Future<Schedule> parse(String naturalLanguage, {DateTime now})
-  parser/schedule_parser.dart
-    - Schedule fromLlmJson(Map<String, dynamic>)
-  prompt/system_prompt.dart
-    - 提示模板：强制 LLM 输出固定 JSON Schema
+  prompt/system_prompt.dart     # 模板：强制输出固定 JSON Schema，相对时间→绝对时间
+  parser/schedule_parser.dart   # fromLlmJson(Map) → Schedule（含容错/回退）
+  service/ai_api_key_store.dart # SharedPreferences 持久化 Key
+  service/ai_service.dart       # parse(naturalLanguage) → Schedule + 异常体系
+  ai_providers.dart             # aiServiceProvider / aiHttpClientProvider / aiApiKeyStoreProvider
 ```
 
-### 10.2 新增一个 Riverpod Provider
+`ScheduleNotifier` 新增 `isParsing` / `aiError` 状态与 `fillFromAi()`：解析结果**只填充表单**，由用户核对后再提交，不直接写日历。
 
-```dart
-// 在 schedule_notifier.dart 追加（不影响现有逻辑）
-final aiServiceProvider = Provider<AiService>((ref) => AiService());
+### 10.3 AiInputCard
 
-extension ScheduleNotifierAiExt on ScheduleNotifier {
-  Future<void> fillFromAi(String prompt) async {
-    final ai = ref.read(aiServiceProvider); // ref 可用，因为 Notifier 有 Ref?
-    final parsed = await ai.parse(prompt);
-    // 不直接 submit，而是填充表单让用户确认
-    state = state.copyWith(schedule: parsed);
-  }
-}
-```
-
-### 10.3 启用 AiInputCard
-
-把 `AiInputCard` 的 TextField `enabled: false` → `true`，回车调 `notifier.fillFromAi(text)`。
+已启用：输入 → 回车/发送 → DeepSeek 解析 → 填充表单；右上角钥匙图标可配置 API Key。
 
 ---
 

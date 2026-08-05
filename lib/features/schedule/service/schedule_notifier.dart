@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ai/ai_providers.dart';
+import '../../ai/service/ai_service.dart';
 import '../../calendar/platform/calendar_platform.dart';
 import '../../calendar/platform/calendar_method_channel.dart';
 import '../model/repeat_rule.dart';
@@ -24,28 +26,37 @@ final scheduleServiceProvider = Provider<ScheduleService>((ref) {
 class ScheduleFormState {
   final Schedule schedule;
   final bool isSubmitting;
+  final bool isParsing;
   final Object? error;
+  final Object? aiError;
   final String? lastCreatedEventId;
 
   const ScheduleFormState({
     required this.schedule,
     this.isSubmitting = false,
+    this.isParsing = false,
     this.error,
+    this.aiError,
     this.lastCreatedEventId,
   });
 
   ScheduleFormState copyWith({
     Schedule? schedule,
     bool? isSubmitting,
+    bool? isParsing,
     Object? error,
+    Object? aiError,
     String? lastCreatedEventId,
     bool clearError = false,
+    bool clearAiError = false,
     bool clearEventId = false,
   }) {
     return ScheduleFormState(
       schedule: schedule ?? this.schedule,
       isSubmitting: isSubmitting ?? this.isSubmitting,
+      isParsing: isParsing ?? this.isParsing,
       error: clearError ? null : (error ?? this.error),
+      aiError: clearAiError ? null : (aiError ?? this.aiError),
       lastCreatedEventId:
           clearEventId ? null : (lastCreatedEventId ?? this.lastCreatedEventId),
     );
@@ -54,8 +65,9 @@ class ScheduleFormState {
 
 class ScheduleNotifier extends StateNotifier<ScheduleFormState> {
   final ScheduleService _service;
+  final AiService _aiService;
 
-  ScheduleNotifier(this._service, Schedule initial)
+  ScheduleNotifier(this._service, this._aiService, Schedule initial)
       : super(ScheduleFormState(schedule: initial));
 
   void updateTitle(String title) {
@@ -135,6 +147,32 @@ class ScheduleNotifier extends StateNotifier<ScheduleFormState> {
     }
   }
 
+  /// 调用 DeepSeek V4 Flash 解析自然语言，成功后填充整个表单。
+  Future<bool> fillFromAi(String input) async {
+    if (state.isParsing) return false;
+    state = state.copyWith(
+      isParsing: true,
+      clearAiError: true,
+      clearEventId: true,
+    );
+    try {
+      final parsed = await _aiService.parse(input);
+      state = state.copyWith(
+        schedule: parsed,
+        isParsing: false,
+        clearError: true,
+        clearAiError: true,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isParsing: false,
+        aiError: e,
+      );
+      return false;
+    }
+  }
+
   static Schedule _defaultSchedule() {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day, now.hour, 0)
@@ -152,5 +190,10 @@ class ScheduleNotifier extends StateNotifier<ScheduleFormState> {
 final scheduleNotifierProvider =
     StateNotifierProvider<ScheduleNotifier, ScheduleFormState>((ref) {
   final service = ref.watch(scheduleServiceProvider);
-  return ScheduleNotifier(service, ScheduleNotifier._defaultSchedule());
+  final aiService = ref.watch(aiServiceProvider);
+  return ScheduleNotifier(
+    service,
+    aiService,
+    ScheduleNotifier._defaultSchedule(),
+  );
 });

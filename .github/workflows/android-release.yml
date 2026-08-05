@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build-release:
-    name: Build Android Release APK
+    name: Build Android Release APKs
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -82,7 +82,7 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/ai_calendar_release.keystore"
           echo "keystore-path=$HOME/.android/ai_calendar_release.keystore" >> "$GITHUB_OUTPUT"
 
-      - name: Build Android Release APK
+      - name: Build Android Release APKs (split per ABI)
         env:
           KEYSTORE_PATH: ${{ steps.keystore.outputs.keystore-path }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -90,34 +90,41 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -n "${KEYSTORE_PATH}" ] && [ -f "${KEYSTORE_PATH}" ]; then
-            echo "=== Building signed release APK ==="
+            echo "=== Building signed release APKs (split per ABI) ==="
             flutter build apk --release --no-pub \
+              --split-per-abi \
               --dart-define=APP_VERSION=${{ steps.version.outputs.name }} \
               --build-name="${{ steps.version.outputs.name }}"
           else
-            echo "=== No signing secrets found, building unsigned release APK ==="
+            echo "=== No signing secrets found, building unsigned release APKs ==="
             flutter build apk --release --no-pub \
               --no-shrink \
+              --split-per-abi \
               --dart-define=APP_VERSION=${{ steps.version.outputs.name }} \
               --build-name="${{ steps.version.outputs.name }}"
           fi
         timeout-minutes: 45
 
-      - name: Rename APK with version
+      - name: Rename APKs with version
         id: apk-path
         run: |
-          SRC="build/app/outputs/flutter-apk/app-release.apk"
           DST_DIR="build/app/outputs/flutter-apk"
-          DST="${DST_DIR}/ai-calendar-${{ steps.version.outputs.name }}.apk"
-          if [ -f "$SRC" ]; then
-            mv "$SRC" "$DST"
-            echo "path=${DST}" >> "$GITHUB_OUTPUT"
-            echo "APK size: $(du -h "$DST" | cut -f1)"
-          else
-            echo "app-release.apk not found at $SRC" >&2
+          FOUND=0
+          for ABI in arm64-v8a armeabi-v7a x86_64; do
+            SRC="${DST_DIR}/app-${ABI}-release.apk"
+            if [ -f "$SRC" ]; then
+              DST="${DST_DIR}/ai-calendar-${{ steps.version.outputs.name }}-${ABI}.apk"
+              mv "$SRC" "$DST"
+              FOUND=1
+              echo "APK: $(basename "$DST") ($(du -h "$DST" | cut -f1))"
+            fi
+          done
+          if [ "$FOUND" -ne 1 ]; then
+            echo "No split-per-abi APKs found in $DST_DIR" >&2
             ls -la build/app/outputs/flutter-apk/ 2>&1 || true
             exit 1
           fi
+          echo "path=${DST_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Build Android App Bundle (AAB) [optional]
         if: steps.keystore.outputs.keystore-path != ''
@@ -135,7 +142,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-calendar-release-apk
-          path: ${{ steps.apk-path.outputs.path }}
+          path: ${{ steps.apk-path.outputs.path }}/ai-calendar-*.apk
           retention-days: 90
           if-no-files-found: error
 
@@ -182,13 +189,14 @@ jobs:
             echo ""
             echo "### File hashes"
             echo ""
-            APK_FILE=$(find . -maxdepth 2 -name 'ai-calendar-*.apk' | head -n1)
-            if [ -n "$APK_FILE" ]; then
-              echo "| File | SHA256 |"
-              echo "|------|--------|"
+            echo "| File | ABI | SHA256 |"
+            echo "|------|-----|--------|"
+            for APK_FILE in ai-calendar-*.apk; do
+              [ -e "$APK_FILE" ] || continue
+              ABI=$(basename "$APK_FILE" .apk | sed 's/^ai-calendar-.*-//')
               HASH=$(sha256sum "$APK_FILE" | awk '{print $1}')
-              echo "| \`$(basename "$APK_FILE")\` | \`$HASH\` |"
-            fi
+              echo "| \`$(basename "$APK_FILE")\` | \`$ABI\` | \`$HASH\` |"
+            done
             echo "RELEASE_EOF"
           } >> "$GITHUB_OUTPUT"
 

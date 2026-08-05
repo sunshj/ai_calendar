@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class ReminderSelector extends StatelessWidget {
-  final int valueMinutes;
-  final ValueChanged<int> onChanged;
+  final int? valueMinutes;
+  final ValueChanged<int?> onChanged;
 
-  static const List<int> options = [0, 5, 10, 15, 30, 60, 120, 1440];
+  static const List<int?> options = [null, 0, 5, 10, 15, 30, 60, 120, 1440];
 
   const ReminderSelector({
     super.key,
@@ -12,9 +12,10 @@ class ReminderSelector extends StatelessWidget {
     required this.onChanged,
   });
 
-  String _label(int minutes) {
+  String _label(int? minutes) {
     return switch (minutes) {
-      0 => '不提醒',
+      null => '不提醒',
+      0 => '开始时',
       < 60 => '$minutes 分钟前',
       60 => '1 小时前',
       < 1440 => '${minutes ~/ 60} 小时前',

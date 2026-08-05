@@ -47,7 +47,7 @@ class ScheduleService {
     if (!schedule.end.isAfter(schedule.start)) {
       throw ScheduleValidationException('结束时间必须晚于开始时间');
     }
-    if (schedule.reminderMinutes < 0) {
+    if (schedule.reminderMinutes != null && schedule.reminderMinutes! < 0) {
       throw ScheduleValidationException('提醒时间不能为负数');
     }
     final rrule = schedule.repeatRule;

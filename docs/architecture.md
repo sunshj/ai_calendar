@@ -203,7 +203,7 @@ class Schedule {
   final String? description;       // 可选
   final DateTime start;            // 本地时间，toJson → UTC ISO8601
   final DateTime end;              // 本地时间，toJson → UTC ISO8601
-  final int reminderMinutes;       // 默认 15；0 = 不提醒
+  final int? reminderMinutes;      // 默认 15；null = 不提醒；0 = 开始时提醒
   final RepeatRule? repeatRule;    // null = 不重复
 }
 ```
@@ -396,7 +396,7 @@ RRuleBuilder.fromRepeatRuleMap({
    - 先 `findWritableCalendar()`：查询 `Calendars.VISIBLE=1`，取第一条
    - 找不到就 `createLocalCalendar()`：ACCOUNT_TYPE_LOCAL，颜色紫 (#FF6750A4 的负值)，带 `CALLER_IS_SYNCADAPTER`
 2. `ContentResolver.insert(Events.CONTENT_URI, values)` → 返回 eventUri → eventId
-3. 如果 reminderMinutes > 0：`insert(Reminders.CONTENT_URI)`，METHOD = METHOD_ALERT
+3. 如果 reminderMinutes 非 null：`insert(Reminders.CONTENT_URI)`，METHOD = METHOD_ALERT（MINUTES=0 表示开始时提醒；null 不插入提醒）
 
 Events 字段默认值：
 

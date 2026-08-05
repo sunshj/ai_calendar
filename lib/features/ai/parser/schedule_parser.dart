@@ -36,21 +36,31 @@ Schedule scheduleFromLlmJson(Map<String, dynamic> json) {
       start.add(Duration(minutes: durationMinutes));
   final finalEnd = end.isAfter(start) ? end : start.add(const Duration(hours: 1));
 
-  final reminderMinutes = (json['reminderMinutes'] as num?)?.toInt() ??
-      _defaultReminderMinutes;
+  final reminderMinutes = _parseReminder(json);
 
   return Schedule(
     title: title,
     description: (json['description'] as String?)?.trim(),
     start: start,
     end: finalEnd,
-    reminderMinutes: reminderMinutes < 0 ? 0 : reminderMinutes,
+    reminderMinutes: reminderMinutes,
     repeatRule: _parseRepeatRule(json['repeatRule'], start),
   );
 }
 
 const _defaultDurationMinutes = 60;
 const _defaultReminderMinutes = 15;
+
+int? _parseReminder(Map<String, dynamic> json) {
+  final raw = json['reminderMinutes'];
+  if (raw is num) {
+    final value = raw.toInt();
+    return value < 0 ? 0 : value;
+  }
+  // 显式 null = 不提醒；字段缺失时用默认值。
+  if (json.containsKey('reminderMinutes')) return null;
+  return _defaultReminderMinutes;
+}
 
 RepeatRule? _parseRepeatRule(Object? raw, DateTime start) {
   if (raw is! Map<String, dynamic> || raw.isEmpty) return null;

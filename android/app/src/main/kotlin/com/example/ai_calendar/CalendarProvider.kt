@@ -26,7 +26,7 @@ object CalendarProvider {
         endMillis: Long,
         allDay: Boolean = false,
         rrule: String? = null,
-        reminderMinutes: Int = 0,
+        reminderMinutes: Int? = null,
     ): Long {
         val calendarId = ensureCalendarExists(context)
         val tz = TimeZone.getDefault().id
@@ -50,8 +50,8 @@ object CalendarProvider {
         val eventId = eventUri?.lastPathSegment?.toLongOrNull()
             ?: throw IllegalStateException("Failed to insert event, no event URI returned")
 
-        if (reminderMinutes > 0) {
-            insertReminder(context, eventId, reminderMinutes)
+        reminderMinutes?.let {
+            insertReminder(context, eventId, it)
         }
 
         return eventId
@@ -67,7 +67,7 @@ object CalendarProvider {
         endMillis: Long,
         allDay: Boolean = false,
         rrule: String? = null,
-        reminderMinutes: Int = 0,
+        reminderMinutes: Int? = null,
     ) {
         val tz = TimeZone.getDefault().id
         val values = ContentValues().apply {
@@ -91,8 +91,8 @@ object CalendarProvider {
         context.contentResolver.update(uri, values, null, null)
 
         deleteRemindersForEvent(context, eventId)
-        if (reminderMinutes > 0) {
-            insertReminder(context, eventId, reminderMinutes)
+        reminderMinutes?.let {
+            insertReminder(context, eventId, it)
         }
     }
 

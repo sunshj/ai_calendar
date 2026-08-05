@@ -5,7 +5,8 @@ class Schedule {
   final String? description;
   final DateTime start;
   final DateTime end;
-  final int reminderMinutes;
+  /// 提醒提前分钟数：null = 不提醒，0 = 开始时提醒，>0 = 提前 N 分钟。
+  final int? reminderMinutes;
   final RepeatRule? repeatRule;
 
   const Schedule({
@@ -26,13 +27,15 @@ class Schedule {
     RepeatRule? repeatRule,
     bool clearDescription = false,
     bool clearRepeatRule = false,
+    bool clearReminder = false,
   }) {
     return Schedule(
       title: title ?? this.title,
       description: clearDescription ? null : (description ?? this.description),
       start: start ?? this.start,
       end: end ?? this.end,
-      reminderMinutes: reminderMinutes ?? this.reminderMinutes,
+      reminderMinutes:
+          clearReminder ? null : (reminderMinutes ?? this.reminderMinutes),
       repeatRule: clearRepeatRule ? null : (repeatRule ?? this.repeatRule),
     );
   }
@@ -55,10 +58,18 @@ class Schedule {
       description: json['description'] as String?,
       start: DateTime.parse(json['start'] as String).toLocal(),
       end: DateTime.parse(json['end'] as String).toLocal(),
-      reminderMinutes: (json['reminderMinutes'] as num?)?.toInt() ?? 15,
+      reminderMinutes: _parseReminder(json),
       repeatRule:
           repeatRuleJson == null ? null : RepeatRule.fromJson(repeatRuleJson),
     );
+  }
+
+  static int? _parseReminder(Map<String, dynamic> json) {
+    final raw = json['reminderMinutes'];
+    if (raw is num) return raw.toInt();
+    // 显式 null 表示"不提醒"；字段缺失时用默认值（兼容旧数据）。
+    if (json.containsKey('reminderMinutes')) return null;
+    return 15;
   }
 
   @override
@@ -86,6 +97,7 @@ class Schedule {
   @override
   String toString() {
     return 'Schedule(title: $title, start: $start, end: $end, '
-        'reminder: ${reminderMinutes}min, repeat: $repeatRule)';
+        'reminder: ${reminderMinutes == null ? 'none' : '${reminderMinutes}min'}, '
+        'repeat: $repeatRule)';
   }
 }

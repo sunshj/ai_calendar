@@ -111,6 +111,35 @@ void main() {
       expect(schedule.reminderMinutes, 0);
     });
 
+    test('reminderMinutes 为 0 表示开始时提醒', () {
+      final schedule = scheduleFromLlmJson({
+        'title': '测试',
+        'start': '2026-08-06T10:00:00',
+        'reminderMinutes': 0,
+      });
+
+      expect(schedule.reminderMinutes, 0);
+    });
+
+    test('reminderMinutes 为 null 表示不提醒', () {
+      final schedule = scheduleFromLlmJson({
+        'title': '测试',
+        'start': '2026-08-06T10:00:00',
+        'reminderMinutes': null,
+      });
+
+      expect(schedule.reminderMinutes, isNull);
+    });
+
+    test('缺少 reminderMinutes 时默认 15 分钟', () {
+      final schedule = scheduleFromLlmJson({
+        'title': '测试',
+        'start': '2026-08-06T10:00:00',
+      });
+
+      expect(schedule.reminderMinutes, 15);
+    });
+
     test('repeatRule 为 null 或空时不重复', () {
       final schedule = scheduleFromLlmJson({
         'title': '单次',

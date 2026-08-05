@@ -101,9 +101,12 @@ class ScheduleNotifier extends StateNotifier<ScheduleFormState> {
     );
   }
 
-  void updateReminderMinutes(int minutes) {
+  void updateReminderMinutes(int? minutes) {
     state = state.copyWith(
-      schedule: state.schedule.copyWith(reminderMinutes: minutes),
+      schedule: state.schedule.copyWith(
+        reminderMinutes: minutes,
+        clearReminder: minutes == null,
+      ),
       clearError: true,
     );
   }

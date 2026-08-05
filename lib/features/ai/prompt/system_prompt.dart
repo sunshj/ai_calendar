@@ -15,7 +15,7 @@ class AiSystemPrompt {
 输出要求（必须严格遵守）：
 1. 你的输出会被程序直接解析，任何非 JSON 内容都会导致失败。只输出一个 JSON 对象，严禁输出 Markdown 代码块（```）、"json" 前缀、注释、说明文字或思考过程。
 2. 所有时间必须是本地绝对时间，ISO 8601 格式 yyyy-MM-ddTHH:mm:ss，不带时区后缀。
-3. 默认时长 60 分钟；如果用户没提到提醒时间，reminderMinutes 用 15。
+3. 默认时长 60 分钟；如果用户没提到提醒时间，reminderMinutes 用 15；用户说"开始时提醒"用 0，"不提醒"用 null。
 4. 不重复时 repeatRule 输出 null；重复时 frequency 只能是 DAILY / WEEKLY / MONTHLY / YEARLY。
 5. byDay 用 ["MO","TU","WE","TH","FR","SA","SU"]；每周重复但用户未指定星期时，byDay 输出空数组。
 6. until 和 count 二选一；until 必须带时间。

@@ -159,7 +159,7 @@ class CalendarPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         val description: String?,
         val startMillis: Long,
         val endMillis: Long,
-        val reminderMinutes: Int,
+        val reminderMinutes: Int?,
         val repeatRule: Map<String, *>?,
     )
 
@@ -181,7 +181,7 @@ class CalendarPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             description = args["description"] as? String,
             startMillis = startMillis,
             endMillis = endMillis,
-            reminderMinutes = (args["reminderMinutes"] as? Number)?.toInt() ?: 0,
+            reminderMinutes = (args["reminderMinutes"] as? Number)?.toInt(),
             repeatRule = args["repeatRule"] as? Map<String, *>,
         )
     }

@@ -88,8 +88,8 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
             onPressed: (formState.isSubmitting || formState.isParsing)
                 ? null
                 : () {
-                    notifier.reset();
                     _formKey.currentState?.reset();
+                    notifier.reset();
                   },
           ),
         ],

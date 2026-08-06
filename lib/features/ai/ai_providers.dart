@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import 'service/ai_api_key_store.dart';
+import 'service/ai_provider_store.dart';
 import 'service/ai_service.dart';
 
-final aiApiKeyStoreProvider = Provider<AiApiKeyStore>((ref) {
-  return AiApiKeyStore();
+final aiProviderStoreProvider = Provider<AiProviderStore>((ref) {
+  return AiProviderStore();
 });
 
 final aiHttpClientProvider = Provider<http.Client>((ref) {
@@ -17,6 +17,6 @@ final aiHttpClientProvider = Provider<http.Client>((ref) {
 final aiServiceProvider = Provider<AiService>((ref) {
   return AiService(
     client: ref.watch(aiHttpClientProvider),
-    keyStore: ref.watch(aiApiKeyStoreProvider),
+    store: ref.watch(aiProviderStoreProvider),
   );
 });

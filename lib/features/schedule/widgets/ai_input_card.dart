@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../ai/ai_providers.dart';
+import '../../ai/model/ai_provider_config.dart';
 import '../../ai/parser/schedule_parser.dart';
 import '../../ai/service/ai_service.dart';
 import '../service/schedule_notifier.dart';
@@ -18,6 +19,7 @@ class AiInputCard extends ConsumerStatefulWidget {
 
 class _AiInputCardState extends ConsumerState<AiInputCard> {
   final _controller = TextEditingController();
+  int? _lastResetCount;
 
   @override
   void dispose() {
@@ -41,89 +43,37 @@ class _AiInputCardState extends ConsumerState<AiInputCard> {
     }
   }
 
-  Future<void> _showApiKeyDialog() async {
-    final store = ref.read(aiApiKeyStoreProvider);
-    const injected = String.fromEnvironment('AI_API_KEY');
-    final current = await store.load() ?? injected;
+  Future<void> _showProviderDialog() async {
+    final store = ref.read(aiProviderStoreProvider);
+    final stored = await store.load() ?? AiProviderConfig.deepSeek();
     if (!mounted) return;
 
-    final controller = TextEditingController(text: current);
-    var obscure = true;
+    const injectedKey = String.fromEnvironment('AI_API_KEY');
+    const injectedBaseUrl = String.fromEnvironment('AI_BASE_URL');
+    const injectedModel = String.fromEnvironment('AI_MODEL');
 
-    final result = await showDialog<String>(
+    final result = await showDialog<_ProviderDialogResult>(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return AlertDialog(
-              title: const Text('DeepSeek API Key'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: controller,
-                    obscureText: obscure,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: InputDecoration(
-                      labelText: 'API Key',
-                      hintText: 'sk-...',
-                      prefixIcon: const Icon(Icons.key),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscure ? Icons.visibility_off : Icons.visibility,
-                        ),
-                        onPressed: () {
-                          setDialogState(() => obscure = !obscure);
-                        },
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '保存后优先使用应用内 Key；也可以在启动时注入：\n'
-                    'flutter run --dart-define=AI_API_KEY=sk-xxx',
-                    style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(dialogContext)
-                              .colorScheme
-                              .onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, ''),
-                  child: const Text('清除'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () =>
-                      Navigator.pop(dialogContext, controller.text.trim()),
-                  child: const Text('保存'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (_) => _ProviderSettingsDialog(
+        initial: stored,
+        injectedKey: injectedKey,
+        injectedBaseUrl: injectedBaseUrl,
+        injectedModel: injectedModel,
+      ),
     );
 
     if (!mounted || result == null) return;
-    if (result.isEmpty) {
-      await store.clear();
+    if (result.clearApiKey) {
+      await store.clearApiKey();
     } else {
-      await store.save(result);
+      await store.save(result.config!);
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(result.isEmpty ? '已清除 API Key' : 'API Key 已保存'),
+        content: Text(
+          result.clearApiKey ? '已清除 API Key' : 'AI 提供商配置已保存',
+        ),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -142,6 +92,17 @@ class _AiInputCardState extends ConsumerState<AiInputCard> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final formState = ref.watch(scheduleNotifierProvider);
+    if (_lastResetCount != formState.resetCount) {
+      _lastResetCount = formState.resetCount;
+      if (_controller.text.isNotEmpty) {
+        // 延迟到帧后，避免在 build 阶段修改控制器触发 setState 报错。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.text.isNotEmpty) {
+            _controller.clear();
+          }
+        });
+      }
+    }
     final isParsing = formState.isParsing;
     final aiError = formState.aiError;
 
@@ -163,9 +124,9 @@ class _AiInputCardState extends ConsumerState<AiInputCard> {
                 ),
                 const Spacer(),
                 IconButton(
-                  tooltip: 'API Key 设置',
+                  tooltip: 'AI 提供商设置',
                   icon: const Icon(Icons.key),
-                  onPressed: isParsing ? null : _showApiKeyDialog,
+                  onPressed: isParsing ? null : _showProviderDialog,
                 ),
               ],
             ),
@@ -274,4 +235,216 @@ class _AiInputCardState extends ConsumerState<AiInputCard> {
       ),
     );
   }
+}
+
+class _ProviderSettingsDialog extends StatefulWidget {
+  final AiProviderConfig initial;
+  final String injectedKey;
+  final String injectedBaseUrl;
+  final String injectedModel;
+
+  const _ProviderSettingsDialog({
+    required this.initial,
+    required this.injectedKey,
+    required this.injectedBaseUrl,
+    required this.injectedModel,
+  });
+
+  @override
+  State<_ProviderSettingsDialog> createState() => _ProviderSettingsDialogState();
+}
+
+class _ProviderSettingsDialogState extends State<_ProviderSettingsDialog> {
+  late final TextEditingController _apiKeyController;
+  late final TextEditingController _baseUrlController;
+  late final TextEditingController _modelController;
+  late String _selectedPreset;
+  var _obscure = true;
+  var _errorText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final config = widget.initial;
+    _apiKeyController = TextEditingController(
+      text: config.apiKey ?? widget.injectedKey,
+    );
+    _baseUrlController = TextEditingController(
+      text: widget.injectedBaseUrl.isNotEmpty
+          ? widget.injectedBaseUrl
+          : config.baseUrl,
+    );
+    _modelController = TextEditingController(
+      text: widget.injectedModel.isNotEmpty ? widget.injectedModel : config.model,
+    );
+    _selectedPreset = _matchPreset(config.baseUrl);
+  }
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    _baseUrlController.dispose();
+    _modelController.dispose();
+    super.dispose();
+  }
+
+  String _matchPreset(String baseUrl) {
+    for (final preset in aiProviderPresets) {
+      if (preset.baseUrl.isNotEmpty && preset.baseUrl == baseUrl) {
+        return preset.name;
+      }
+    }
+    return '自定义';
+  }
+
+  void _applyPreset(AiProviderPreset preset) {
+    setState(() {
+      _selectedPreset = preset.name;
+      if (preset.baseUrl.isNotEmpty) {
+        _baseUrlController.text = preset.baseUrl;
+      }
+      if (preset.model.isNotEmpty) {
+        _modelController.text = preset.model;
+      }
+      _errorText = '';
+    });
+  }
+
+  void _save() {
+    final baseUrl = _baseUrlController.text.trim();
+    final model = _modelController.text.trim();
+    if (baseUrl.isEmpty || model.isEmpty) {
+      setState(() => _errorText = '接口地址和模型不能为空');
+      return;
+    }
+    final key = _apiKeyController.text.trim();
+    Navigator.pop(
+      context,
+      _ProviderDialogResult.save(
+        AiProviderConfig(
+          name: _selectedPreset,
+          baseUrl: baseUrl,
+          model: model,
+          apiKey: key.isEmpty ? null : key,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('AI 提供商设置'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: aiProviderPresets.map((preset) {
+                return ChoiceChip(
+                  label: Text(preset.name),
+                  selected: _selectedPreset == preset.name,
+                  onSelected: (_) => _applyPreset(preset),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _baseUrlController,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: '接口地址',
+                hintText: 'https://api.openai.com/v1/chat/completions',
+                prefixIcon: Icon(Icons.link),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _modelController,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: '模型',
+                hintText: 'deepseek-chat / gpt-4o-mini',
+                prefixIcon: Icon(Icons.smart_toy_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _apiKeyController,
+              obscureText: _obscure,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                hintText: 'sk-...',
+                prefixIcon: const Icon(Icons.key),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscure ? Icons.visibility_off : Icons.visibility,
+                  ),
+                  onPressed: () {
+                    setState(() => _obscure = !_obscure);
+                  },
+                ),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (_errorText.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _errorText,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              '任意 OpenAI Chat Completions 兼容接口均可使用。'
+              '接口地址填基础地址或完整 /chat/completions 地址都可以。'
+              '也可以启动时注入（不落盘）：\n'
+              'flutter run --dart-define=AI_API_KEY=sk-xxx '
+              '[--dart-define=AI_BASE_URL=https://... '
+              '--dart-define=AI_MODEL=xxx]',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(
+            context,
+            const _ProviderDialogResult.clear(),
+          ),
+          child: const Text('清除 Key'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProviderDialogResult {
+  final AiProviderConfig? config;
+  final bool clearApiKey;
+
+  const _ProviderDialogResult.save(this.config) : clearApiKey = false;
+  const _ProviderDialogResult.clear()
+      : config = null,
+        clearApiKey = true;
 }

@@ -30,6 +30,8 @@ class ScheduleFormState {
   final Object? error;
   final Object? aiError;
   final String? lastCreatedEventId;
+  /// 表单被重置的次数，供表单内非 FormField 控件（如 AI 输入框）感知重置。
+  final int resetCount;
 
   const ScheduleFormState({
     required this.schedule,
@@ -38,6 +40,7 @@ class ScheduleFormState {
     this.error,
     this.aiError,
     this.lastCreatedEventId,
+    this.resetCount = 0,
   });
 
   ScheduleFormState copyWith({
@@ -47,6 +50,7 @@ class ScheduleFormState {
     Object? error,
     Object? aiError,
     String? lastCreatedEventId,
+    int? resetCount,
     bool clearError = false,
     bool clearAiError = false,
     bool clearEventId = false,
@@ -59,6 +63,7 @@ class ScheduleFormState {
       aiError: clearAiError ? null : (aiError ?? this.aiError),
       lastCreatedEventId:
           clearEventId ? null : (lastCreatedEventId ?? this.lastCreatedEventId),
+      resetCount: resetCount ?? this.resetCount,
     );
   }
 }
@@ -124,6 +129,7 @@ class ScheduleNotifier extends StateNotifier<ScheduleFormState> {
   void reset({Schedule? initial}) {
     state = ScheduleFormState(
       schedule: initial ?? _defaultSchedule(),
+      resetCount: state.resetCount + 1,
     );
   }
 

@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 
 enum EndCondition { never, until, count }
 
-class EndConditionEditor extends StatelessWidget {
+class EndConditionEditor extends StatefulWidget {
   final DateTime? until;
   final int? count;
   final DateTime start;
@@ -19,14 +19,54 @@ class EndConditionEditor extends StatelessWidget {
     required this.onCountChanged,
   });
 
+  @override
+  State<EndConditionEditor> createState() => _EndConditionEditorState();
+}
+
+class _EndConditionEditorState extends State<EndConditionEditor> {
+  late final TextEditingController _countController;
+  int? _lastCount;
+
+  @override
+  void initState() {
+    super.initState();
+    _countController = TextEditingController(
+      text: widget.count != null ? '${widget.count}' : '',
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant EndConditionEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.count != oldWidget.count) {
+      if (widget.count != null) {
+        _lastCount = widget.count;
+      }
+      final text = widget.count != null ? '${widget.count}' : '';
+      if (_countController.text != text) {
+        _countController.text = text;
+        _countController.selection =
+            TextSelection.collapsed(offset: text.length);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _countController.dispose();
+    super.dispose();
+  }
+
   EndCondition get _current {
-    if (until != null) return EndCondition.until;
-    if (count != null) return EndCondition.count;
+    if (widget.until != null) return EndCondition.until;
+    if (widget.count != null) return EndCondition.count;
     return EndCondition.never;
   }
 
-  Future<void> _pickDate(BuildContext context) async {
-    final initialDate = until ?? start.add(const Duration(days: 30));
+  Future<void> _pickDate() async {
+    final start = widget.start;
+    final initialDate =
+        widget.until ?? start.add(const Duration(days: 30));
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate.isAfter(start) ? initialDate : start,
@@ -34,8 +74,61 @@ class EndConditionEditor extends StatelessWidget {
       lastDate: DateTime(start.year + 10, 12, 31),
     );
     if (picked != null) {
-      onUntilChanged(DateTime(picked.year, picked.month, picked.day, 23, 59, 59));
+      widget.onUntilChanged(
+        DateTime(picked.year, picked.month, picked.day, 23, 59, 59),
+      );
     }
+  }
+
+  void _select(EndCondition cond) {
+    switch (cond) {
+      case EndCondition.never:
+        widget.onUntilChanged(null);
+        widget.onCountChanged(null);
+      case EndCondition.until:
+        widget.onCountChanged(null);
+        widget.onUntilChanged(
+          widget.until ?? widget.start.add(const Duration(days: 30)),
+        );
+      case EndCondition.count:
+        widget.onUntilChanged(null);
+        widget.onCountChanged(widget.count ?? _lastCount ?? 10);
+    }
+  }
+
+  Widget? _trailing(EndCondition cond, bool selected) {
+    if (!selected) return null;
+    if (cond == EndCondition.until) {
+      return TextButton.icon(
+        onPressed: _pickDate,
+        icon: const Icon(Icons.event),
+        label: Text(
+          widget.until != null
+              ? DateFormat('yyyy-MM-dd').format(widget.until!)
+              : '选择日期',
+        ),
+      );
+    }
+    if (cond == EndCondition.count) {
+      return SizedBox(
+        width: 90,
+        child: TextField(
+          controller: _countController,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          onChanged: (v) {
+            final n = int.tryParse(v);
+            widget.onCountChanged(n == null || n <= 0 ? null : n);
+          },
+          decoration: const InputDecoration(
+            isDense: true,
+            suffixText: '次',
+            contentPadding: EdgeInsets.symmetric(vertical: 10),
+          ),
+        ),
+      );
+    }
+    return null;
   }
 
   @override
@@ -51,57 +144,18 @@ class EndConditionEditor extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ...EndCondition.values.map((cond) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Radio<EndCondition>(
-                  value: cond,
-                  groupValue: _current,
-                  onChanged: (v) {
-                    if (v == EndCondition.never) {
-                      onUntilChanged(null);
-                      onCountChanged(null);
-                    } else if (v == EndCondition.until) {
-                      onCountChanged(null);
-                      onUntilChanged(until ?? start.add(const Duration(days: 30)));
-                    } else if (v == EndCondition.count) {
-                      onUntilChanged(null);
-                      onCountChanged(count ?? 10);
-                    }
-                  },
-                ),
-                Expanded(child: Text(cond.displayName)),
-                if (_current == cond && cond == EndCondition.until)
-                  TextButton.icon(
-                    onPressed: () => _pickDate(context),
-                    icon: const Icon(Icons.event),
-                    label: Text(until != null
-                        ? DateFormat('yyyy-MM-dd').format(until!)
-                        : '选择日期'),
-                  ),
-                if (_current == cond && cond == EndCondition.count)
-                  SizedBox(
-                    width: 90,
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      controller: TextEditingController(
-                        text: count != null ? '$count' : '',
-                      ),
-                      onChanged: (v) {
-                        final n = int.tryParse(v);
-                        onCountChanged(n == null || n <= 0 ? null : n);
-                      },
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        suffixText: '次',
-                        contentPadding: EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          final selected = _current == cond;
+          return RadioListTile<EndCondition>(
+            value: cond,
+            groupValue: _current,
+            onChanged: (v) {
+              if (v != null) _select(v);
+            },
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(cond.displayName),
+            secondary: _trailing(cond, selected),
           );
         }),
       ],

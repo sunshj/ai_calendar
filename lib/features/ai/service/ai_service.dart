@@ -4,26 +4,29 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../schedule/model/schedule.dart';
+import '../model/ai_provider_config.dart';
 import '../parser/schedule_parser.dart';
 import '../prompt/system_prompt.dart';
-import 'ai_api_key_store.dart';
+import 'ai_provider_store.dart';
 
-const _deepSeekEndpoint = 'https://api.deepseek.com/chat/completions';
-const _deepSeekModel = 'deepseek-v4-flash';
 const _requestTimeout = Duration(seconds: 45);
 const _maxTokens = 2048;
 const _temperature = 0.1;
 const _maxAttempts = 2;
+
+const _injectedApiKey = String.fromEnvironment('AI_API_KEY');
+const _injectedBaseUrl = String.fromEnvironment('AI_BASE_URL');
+const _injectedModel = String.fromEnvironment('AI_MODEL');
 
 /// 未配置 API Key 时抛出。
 class AiApiKeyMissingException implements Exception {
   const AiApiKeyMissingException();
 
   @override
-  String toString() => '未配置 DeepSeek API Key，请在 AI 输入卡的设置中填入';
+  String toString() => '未配置 API Key，请在 AI 输入卡的设置中填入';
 }
 
-/// DeepSeek API 返回非 2xx 或响应结构异常时抛出。
+/// AI 服务返回非 2xx 或响应结构异常时抛出。
 class AiApiException implements Exception {
   final int statusCode;
   final String message;
@@ -31,19 +34,22 @@ class AiApiException implements Exception {
   const AiApiException(this.statusCode, this.message);
 
   @override
-  String toString() => 'DeepSeek API 错误($statusCode)：$message';
+  String toString() => 'AI 服务错误($statusCode)：$message';
 }
 
-/// 调用 DeepSeek V4 Flash 把自然语言解析为 [Schedule]。
+/// 调用 OpenAI Chat Completions 兼容接口，把自然语言解析为 [Schedule]。
+///
+/// 提供商（接口地址、模型、API Key）来自 [AiProviderStore] 保存的配置，
+/// 也可通过 `--dart-define=AI_BASE_URL / AI_MODEL / AI_API_KEY` 注入覆盖。
 class AiService {
   final http.Client _client;
-  final AiApiKeyStore _keyStore;
+  final AiProviderStore _store;
 
   AiService({
     required http.Client client,
-    required AiApiKeyStore keyStore,
+    required AiProviderStore store,
   })  : _client = client,
-        _keyStore = keyStore;
+        _store = store;
 
   /// 解析一句自然语言日程描述，返回 [Schedule]。
   ///
@@ -54,8 +60,9 @@ class AiService {
       throw const AiParseException('请输入日程描述');
     }
 
-    final apiKey = await _resolveApiKey();
-    if (apiKey.isEmpty) {
+    final config = await _resolveConfig();
+    final apiKey = config.apiKey;
+    if (apiKey == null || apiKey.isEmpty) {
       throw const AiApiKeyMissingException();
     }
 
@@ -66,7 +73,7 @@ class AiService {
     ];
 
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
-      final content = await _chat(messages, apiKey);
+      final content = await _chat(messages, config);
       try {
         final decoded = _decodeJsonObject(content);
         if (decoded == null) {
@@ -90,11 +97,37 @@ class AiService {
     throw const AiParseException('AI 返回的内容不是合法 JSON');
   }
 
-  Future<String> _resolveApiKey() async {
-    const injected = String.fromEnvironment('AI_API_KEY');
-    final stored = await _keyStore.load();
-    if (stored != null && stored.isNotEmpty) return stored;
-    return injected;
+  /// 合并已保存配置与 dart-define 注入，得到本次请求使用的提供商配置。
+  Future<AiProviderConfig> _resolveConfig() async {
+    final stored = await _store.load();
+    final config = stored ?? AiProviderConfig.deepSeek();
+
+    var baseUrl = config.baseUrl;
+    var model = config.model;
+    var apiKey = config.apiKey;
+    if (_injectedBaseUrl.isNotEmpty) baseUrl = _injectedBaseUrl;
+    if (_injectedModel.isNotEmpty) model = _injectedModel;
+    if (_injectedApiKey.isNotEmpty && (apiKey == null || apiKey.isEmpty)) {
+      apiKey = _injectedApiKey;
+    }
+
+    return AiProviderConfig(
+      name: config.name,
+      baseUrl: _normalizeEndpoint(baseUrl),
+      model: model.trim().isEmpty ? deepSeekModel : model.trim(),
+      apiKey: apiKey,
+    );
+  }
+
+  /// 兼容“只填基础地址”和“填完整 /chat/completions 地址”两种写法。
+  static String _normalizeEndpoint(String baseUrl) {
+    var url = baseUrl.trim();
+    if (url.isEmpty) return deepSeekEndpoint;
+    while (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+    if (url.endsWith('/chat/completions')) return url;
+    return '$url/chat/completions';
   }
 
   /// 从 chat completion 响应中取出 assistant 的 content，去掉可能的代码块围栏。
@@ -177,9 +210,12 @@ class AiService {
     return null;
   }
 
-  Future<String> _chat(List<Map<String, String>> messages, String apiKey) async {
+  Future<String> _chat(
+    List<Map<String, String>> messages,
+    AiProviderConfig config,
+  ) async {
     final requestBody = jsonEncode({
-      'model': _deepSeekModel,
+      'model': config.model,
       'messages': messages,
       'response_format': {'type': 'json_object'},
       'temperature': _temperature,
@@ -190,10 +226,10 @@ class AiService {
     try {
       response = await _client
           .post(
-            Uri.parse(_deepSeekEndpoint),
+            Uri.parse(config.baseUrl),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $apiKey',
+              'Authorization': 'Bearer ${config.apiKey}',
             },
             body: requestBody,
           )

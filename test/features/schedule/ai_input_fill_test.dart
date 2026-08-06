@@ -2,17 +2,18 @@ import 'dart:async';
 
 import 'package:ai_calendar/app.dart';
 import 'package:ai_calendar/features/ai/ai_providers.dart';
-import 'package:ai_calendar/features/ai/service/ai_api_key_store.dart';
+import 'package:ai_calendar/features/ai/service/ai_provider_store.dart';
 import 'package:ai_calendar/features/ai/service/ai_service.dart';
 import 'package:ai_calendar/features/schedule/model/schedule.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeAiService extends AiService {
   _FakeAiService()
-      : super(client: http.Client(), keyStore: AiApiKeyStore());
+      : super(client: http.Client(), store: AiProviderStore());
 
   @override
   Future<Schedule> parse(String naturalLanguage, {DateTime? now}) async {
@@ -27,7 +28,7 @@ class _FakeAiService extends AiService {
 }
 
 class _DelayedAiService extends AiService {
-  _DelayedAiService() : super(client: http.Client(), keyStore: AiApiKeyStore());
+  _DelayedAiService() : super(client: http.Client(), store: AiProviderStore());
 
   final completer = Completer<Schedule>();
 
@@ -38,6 +39,48 @@ class _DelayedAiService extends AiService {
 }
 
 void main() {
+  testWidgets('AI 提供商设置弹窗可切换预设并保存', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = AiProviderStore();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          aiProviderStoreProvider.overrideWithValue(store),
+          aiServiceProvider.overrideWithValue(_FakeAiService()),
+        ],
+        child: const MyApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('AI 提供商设置'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('AI 提供商设置'), findsOneWidget);
+    expect(find.text('DeepSeek'), findsOneWidget);
+    expect(find.text('OpenAI'), findsOneWidget);
+    expect(find.text('自定义'), findsOneWidget);
+
+    // 切换到 OpenAI 预设
+    await tester.tap(find.widgetWithText(ChoiceChip, 'OpenAI'));
+    await tester.pump();
+
+    // 填入 API Key 并保存
+    await tester.enterText(
+      find.widgetWithText(TextField, 'API Key'),
+      'sk-openai-key',
+    );
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final saved = await store.load();
+    expect(saved?.name, 'OpenAI');
+    expect(saved?.baseUrl, 'https://api.openai.com/v1/chat/completions');
+    expect(saved?.model, 'gpt-4o-mini');
+    expect(saved?.apiKey, 'sk-openai-key');
+    expect(find.text('AI 提供商配置已保存'), findsOneWidget);
+  });
+
   testWidgets('AI 解析成功后标题与描述输入框同步刷新', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

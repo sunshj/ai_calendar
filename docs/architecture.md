@@ -413,15 +413,15 @@ Events 字段默认值：
 
 ---
 
-## 10. AI 接入（v1.1 已实现：DeepSeek V4 Flash）
+## 10. AI 接入（OpenAI Chat Completions 兼容提供商）
 
 ### 10.1 调用约定
 
-- 端点：`POST https://api.deepseek.com/chat/completions`（base_url 未变）
-- 模型：`deepseek-v4-flash`（`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 弃用）
+- 端点：默认 `POST https://api.deepseek.com/chat/completions`，可在设置中改为任意 OpenAI 兼容接口
+- 模型：默认 `deepseek-v4-flash`，可在设置中改为任意模型
 - 协议：OpenAI ChatCompletions 兼容，`Authorization: Bearer <API Key>`
 - 结构化输出：`response_format: {"type": "json_object"}`，system prompt 含 "json" 字样与 JSON 样例
-- Key 优先级：应用内 SharedPreferences 保存的 Key > `--dart-define=AI_API_KEY`
+- Key 优先级：应用内保存的提供商配置 > `--dart-define=AI_API_KEY / AI_BASE_URL / AI_MODEL`
 
 ### 10.2 文件清单
 
@@ -429,16 +429,17 @@ Events 字段默认值：
 features/ai/
   prompt/system_prompt.dart     # 模板：强制输出固定 JSON Schema，相对时间→绝对时间
   parser/schedule_parser.dart   # fromLlmJson(Map) → Schedule（含容错/回退）
-  service/ai_api_key_store.dart # SharedPreferences 持久化 Key
+  model/ai_provider_config.dart # 提供商配置模型 + DeepSeek / OpenAI / 自定义预设
+  service/ai_provider_store.dart# SharedPreferences 持久化提供商配置（兼容旧 Key 迁移）
   service/ai_service.dart       # parse(naturalLanguage) → Schedule + 异常体系
-  ai_providers.dart             # aiServiceProvider / aiHttpClientProvider / aiApiKeyStoreProvider
+  ai_providers.dart             # aiServiceProvider / aiHttpClientProvider / aiProviderStoreProvider
 ```
 
 `ScheduleNotifier` 新增 `isParsing` / `aiError` 状态与 `fillFromAi()`：解析结果**只填充表单**，由用户核对后再提交，不直接写日历。
 
 ### 10.3 AiInputCard
 
-已启用：输入 → 回车/发送 → DeepSeek 解析 → 填充表单；右上角钥匙图标可配置 API Key。
+已启用：输入 → 回车/发送 → AI 解析 → 填充表单；右上角钥匙图标可配置提供商（接口地址 / 模型 / API Key）。
 
 ---
 

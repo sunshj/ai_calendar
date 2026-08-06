@@ -72,6 +72,8 @@ class RepeatRuleEditor extends StatelessWidget {
     onChanged(_rule.copyWith(
       until: until,
       clearUntil: until == null,
+      count: null,
+      clearCount: true,
     ));
   }
 
@@ -79,6 +81,8 @@ class RepeatRuleEditor extends StatelessWidget {
     onChanged(_rule.copyWith(
       count: count,
       clearCount: count == null,
+      until: null,
+      clearUntil: true,
     ));
   }
 
